@@ -15,9 +15,7 @@ class VideoAutoPlayBehavior {
     try {
       // Wait for Wistia iframe using ctx.until
       yield ctx.log("⏳ Waiting for Wistia iframe...");
-      await ctx.until(async () => {
-        return document.querySelector('iframe[src*="wistia"]');
-      }, { timeout: 15000 });
+      await ctx.until(() => document.querySelector('iframe[src*="wistia"]'), { timeout: 15000 });
 
       yield ctx.log("✅ Wistia iframe found, sending play command...");
 
@@ -33,8 +31,9 @@ class VideoAutoPlayBehavior {
         yield ctx.log("⚠️ iframe not accessible, cannot send play command.");
       }
 
-      // Sleep to allow video to buffer
-      yield ctx.sleep(5000);
+      // Correct sleep implementation (wait for buffering)
+      yield ctx.log("⏳ Waiting 5 seconds for video to buffer...");
+      await new Promise(resolve => setTimeout(resolve, 5000));
 
       // Wait for network idle
       yield ctx.log("⏳ Waiting for network idle...");
