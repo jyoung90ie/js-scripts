@@ -2,7 +2,7 @@ class VideoAutoPlayBehavior {
   static id = "VideoAutoPlayBehavior";
 
   static isMatch(url, document) {
-    return true; // Apply everywhere
+    return true; // Apply everywhere, but we will check inside run()
   }
 
   static init() {
@@ -13,25 +13,42 @@ class VideoAutoPlayBehavior {
     yield ctx.log("✅ VideoAutoPlayBehavior started!");
 
     try {
-      // Wait for Wistia iframe using ctx.until
-      yield ctx.log("⏳ Waiting for Wistia iframe...");
-      await ctx.until(() => document.querySelector('iframe[src*="wistia"]'), { timeout: 15000 });
+      // Wait for either a Thinkific video element or Wistia iframe
+      yield ctx.log("⏳ Waiting for Thinkific player or Wistia iframe...");
+      await ctx.until(() => {
+        return (
+          document.querySelector('iframe[src*="wistia"]') ||
+          document.querySelector('div[class*="wistia_embed"]') || // Wistia div player (alternative)
+          document.querySelector('video') || // Native video tag (rare on Thinkific but possible)
+          document.querySelector('div.vjs-tech') // Thinkific often uses video.js player classes
+        );
+      }, { timeout: 15000 });
 
-      yield ctx.log("✅ Wistia iframe found, sending play command...");
+      yield ctx.log("✅ Video player found, attempting to autoplay...");
 
-      // Post play message to Wistia iframe
+      // Prefer Wistia iframe autoplay first
       const iframe = document.querySelector('iframe[src*="wistia"]');
       if (iframe && iframe.contentWindow) {
         iframe.contentWindow.postMessage(
           JSON.stringify({ method: "play" }),
           "*"
         );
-        yield ctx.log("▶️ Play command sent.");
+        yield ctx.log("▶️ Sent play command to Wistia player via iframe.");
       } else {
-        yield ctx.log("⚠️ iframe not accessible, cannot send play command.");
+        // Fall back: try native <video> autoplay
+        const video = document.querySelector('video');
+        if (video) {
+          video.play().then(() => {
+            ctx.log("▶️ Native HTML5 video play triggered.");
+          }).catch((e) => {
+            ctx.log(`⚠️ Native video play failed: ${e.message}`);
+          });
+        } else {
+          yield ctx.log("⚠️ No Wistia iframe or native video found to play.");
+        }
       }
 
-      // Correct sleep implementation (wait for buffering)
+      // Correct sleep (allow video buffering)
       yield ctx.log("⏳ Waiting 5 seconds for video to buffer...");
       await new Promise(resolve => setTimeout(resolve, 5000));
 
