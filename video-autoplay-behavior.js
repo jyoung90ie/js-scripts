@@ -2,7 +2,7 @@ class VideoAutoPlayBehavior {
   static id = "VideoAutoPlayBehavior";
 
   static isMatch(url, document) {
-    return true; // Apply everywhere, but we will check inside run()
+    return true;
   }
 
   static init() {
@@ -13,43 +13,48 @@ class VideoAutoPlayBehavior {
     yield ctx.log("✅ VideoAutoPlayBehavior started!");
 
     try {
-      // Wait for either a Thinkific video element or Wistia iframe
-      yield ctx.log("⏳ Waiting for Thinkific player or Wistia iframe...");
-      await ctx.until(() => {
-        return (
-          document.querySelector('iframe[src*="wistia"]') ||
-          document.querySelector('div[class*="wistia_embed"]') || // Wistia div player (alternative)
-          document.querySelector('video') || // Native video tag (rare on Thinkific but possible)
-          document.querySelector('div.vjs-tech') // Thinkific often uses video.js player classes
-        );
-      }, { timeout: 15000 });
+      // Look for <script type="application/ld+json"> blocks
+      const scripts = Array.from(document.querySelectorAll('script[type="application/ld+json"]'));
 
-      yield ctx.log("✅ Video player found, attempting to autoplay...");
+      let found = false;
 
-      // Prefer Wistia iframe autoplay first
-      const iframe = document.querySelector('iframe[src*="wistia"]');
-      if (iframe && iframe.contentWindow) {
-        iframe.contentWindow.postMessage(
-          JSON.stringify({ method: "play" }),
-          "*"
-        );
-        yield ctx.log("▶️ Sent play command to Wistia player via iframe.");
-      } else {
-        // Fall back: try native <video> autoplay
-        const video = document.querySelector('video');
-        if (video) {
-          video.play().then(() => {
-            ctx.log("▶️ Native HTML5 video play triggered.");
-          }).catch((e) => {
-            ctx.log(`⚠️ Native video play failed: ${e.message}`);
-          });
-        } else {
-          yield ctx.log("⚠️ No Wistia iframe or native video found to play.");
+      for (const script of scripts) {
+        try {
+          const data = JSON.parse(script.textContent);
+          if (data && data['contentUrl'] && data['contentUrl'].endsWith('.m3u8')) {
+            const m3u8Url = data['contentUrl'];
+            found = true;
+            yield ctx.log(`🎯 Found video m3u8 URL: ${m3u8Url}`);
+
+            // Create a hidden <video> element to preload
+            const video = document.createElement('video');
+            video.src = m3u8Url;
+            video.preload = "auto";
+            video.style.display = "none";
+            document.body.appendChild(video);
+
+            // Try to call play()
+            try {
+              await video.play();
+              yield ctx.log("▶️ Video play() triggered successfully.");
+            } catch (err) {
+              yield ctx.log(`⚠️ play() failed: ${err.message}`);
+            }
+
+            break; // Only need the first valid video
+          }
+        } catch (err) {
+          yield ctx.log(`⚠️ Failed to parse JSON-LD: ${err.message}`);
+          continue;
         }
       }
 
-      // Correct sleep (allow video buffering)
-      yield ctx.log("⏳ Waiting 5 seconds for video to buffer...");
+      if (!found) {
+        yield ctx.log("⚠️ No video m3u8 found on this page.");
+      }
+
+      // Sleep to allow buffering
+      yield ctx.log("⏳ Waiting 5 seconds to allow video to buffer...");
       await new Promise(resolve => setTimeout(resolve, 5000));
 
       // Wait for network idle
