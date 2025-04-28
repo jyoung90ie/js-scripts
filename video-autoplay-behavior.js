@@ -1,14 +1,22 @@
 class VideoAutoPlayBehavior {
   static id = "VideoAutoPlayBehavior";
 
+  // Required static method: should return true if behavior should run
   static isMatch(url, document) {
-    return true; // Apply to every page (you could filter Thinkific URLs if you want)
+    return true; // Always run (you can later filter if needed)
+  }
+
+  // Required static method: called at behavior startup
+  static init() {
+    // No special setup needed, but method must exist
+    return {};
   }
 
   async* run(ctx) {
-    yield ctx.log("⏳ Waiting for Wistia iframe...");
+    yield ctx.log("✅ Custom VideoAutoPlayBehavior script started!");
 
-    // Wait for Wistia player iframe to appear
+    // Wait for Wistia iframe to appear
+    yield ctx.log("⏳ Waiting for Wistia iframe...");
     await ctx.waitForElement('iframe[src*="wistia"]');
 
     yield ctx.log("✅ Wistia iframe found, attempting to play video...");
@@ -28,11 +36,8 @@ class VideoAutoPlayBehavior {
     yield ctx.sleep(5000);
 
     yield ctx.log("⏳ Waiting for network to become idle...");
-
-    // Wait until network is idle (no active requests for 5 seconds)
     await ctx.waitForNetworkIdle(5000);
 
-    yield ctx.log("✅ Network idle, ready to snapshot and move to next page.");
+    yield ctx.log("✅ Network idle detected, moving on.");
   }
 }
-
