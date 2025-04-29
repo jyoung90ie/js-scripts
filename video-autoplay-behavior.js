@@ -1,5 +1,5 @@
-class VideoAutoPlayBehavior {
-  static id = "VideoAutoPlayBehavior";
+class WistiaAutoPlayBehavior {
+  static id = "WistiaAutoPlayBehavior";
 
   static isMatch(url, document) {
     return true;
@@ -10,61 +10,43 @@ class VideoAutoPlayBehavior {
   }
 
   async* run(ctx) {
-    yield ctx.log("✅ VideoAutoPlayBehavior started!");
+    yield ctx.log("✅ WistiaAutoPlayBehavior started!");
 
     try {
-      // Look for <script type="application/ld+json"> blocks
-      const scripts = Array.from(document.querySelectorAll('script[type="application/ld+json"]'));
+      // 1. Wait for Wistia script to load
+      yield ctx.log("⏳ Waiting for Wistia loader script (window._wq)...");
+      await ctx.until(() => {
+        return window._wq && typeof window._wq.push === "function";
+      }, { timeout: 30000 });
 
-      let found = false;
+      yield ctx.log("✅ Wistia _wq API is available.");
 
-      for (const script of scripts) {
-        try {
-          const data = JSON.parse(script.textContent);
-          if (data && data['contentUrl'] && data['contentUrl'].endsWith('.m3u8')) {
-            const m3u8Url = data['contentUrl'];
-            found = true;
-            yield ctx.log(`🎯 Found video m3u8 URL: ${m3u8Url}`);
-
-            // Create a hidden <video> element to preload
-            const video = document.createElement('video');
-            video.src = m3u8Url;
-            video.preload = "auto";
-            video.style.display = "none";
-            document.body.appendChild(video);
-
-            // Try to call play()
-            try {
-              await video.play();
-              yield ctx.log("▶️ Video play() triggered successfully.");
-            } catch (err) {
-              yield ctx.log(`⚠️ play() failed: ${err.message}`);
-            }
-
-            break; // Only need the first valid video
-          }
-        } catch (err) {
-          yield ctx.log(`⚠️ Failed to parse JSON-LD: ${err.message}`);
-          continue;
+      // 2. Register an autoplay for any player that becomes ready
+      window._wq.push({
+        id: "_all",
+        onReady: function(video) {
+          video.play().then(() => {
+            console.log("▶️ Wistia video started playing automatically.");
+          }).catch((err) => {
+            console.log(`⚠️ Wistia video play() failed: ${err.message}`);
+          });
         }
-      }
+      });
 
-      if (!found) {
-        yield ctx.log("⚠️ No video m3u8 found on this page.");
-      }
+      yield ctx.log("▶️ Autoplay hook registered for all players.");
 
-      // Sleep to allow buffering
-      yield ctx.log("⏳ Waiting 5 seconds to allow video to buffer...");
+      // 3. Sleep to allow video to buffer
+      yield ctx.log("⏳ Waiting 5 seconds for buffering...");
       await new Promise(resolve => setTimeout(resolve, 5000));
 
-      // Wait for network idle
+      // 4. Wait for network idle
       yield ctx.log("⏳ Waiting for network idle...");
       await ctx.untilNetworkIdle({ idleTime: 5000, timeout: 60000 });
 
-      yield ctx.log("✅ Network idle, moving on.");
+      yield ctx.log("✅ Network idle detected, moving on.");
 
     } catch (err) {
-      yield ctx.log(`❌ Error in VideoAutoPlayBehavior: ${err.message}`);
+      yield ctx.log(`❌ Error in WistiaAutoPlayBehavior: ${err.message}`);
     }
   }
 }
