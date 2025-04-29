@@ -1,7 +1,8 @@
-class WistiaAutoPlayBehavior {
-  static id = "WistiaAutoPlayBehavior";
+// Improved WistiaAutoPlayBehavior for Thinkific/Wistia hybrid pages
 
+export default class WistiaAutoPlayBehavior {
   static isMatch(url, document) {
+    // Always apply on Thinkific/Wistia pages
     return true;
   }
 
@@ -9,44 +10,84 @@ class WistiaAutoPlayBehavior {
     return {};
   }
 
-  async* run(ctx) {
-    yield ctx.log("✅ WistiaAutoPlayBehavior started!");
+  static async run(ctx) {
+    ctx.log.debug('Starting WistiaAutoPlayBehavior');
+
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    async function waitForVideoElement(maxRetries = 10) {
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const wistiaEmbed = document.querySelector('.wistia_embed');
+        if (wistiaEmbed) {
+          ctx.log.debug(`Found .wistia_embed on attempt ${attempt}`);
+          return wistiaEmbed;
+        }
+        ctx.log.debug(`Waiting for .wistia_embed (attempt ${attempt})`);
+        await sleep(1000);
+      }
+      throw new Error('Failed to find .wistia_embed element after retries');
+    }
+
+    async function attemptAutoPlayWithWistiaApi() {
+      return new Promise((resolve, reject) => {
+        if (!window._wq || typeof window._wq.push !== 'function') {
+          ctx.log.warn('_wq API not available');
+          return reject(new Error('_wq not available'));
+        }
+
+        ctx.log.debug('Using _wq to hook into video playback');
+
+        window._wq.push({
+          id: '_all',
+          onReady: function(video) {
+            try {
+              ctx.log.debug('Wistia video ready via _wq, attempting play');
+              video.play();
+              resolve();
+            } catch (err) {
+              ctx.log.error('Error during video.play()', {error: err});
+              reject(err);
+            }
+          }
+        });
+      });
+    }
+
+    async function fallbackPlayClick(embed) {
+      ctx.log.debug('Attempting fallback click on embed');
+      try {
+        embed.click();
+        await sleep(500);
+        ctx.log.info('Clicked on video embed for fallback autoplay');
+      } catch (err) {
+        ctx.log.error('Failed fallback click', {error: err});
+      }
+    }
 
     try {
-      // 1. Wait for Wistia script to load
-      yield ctx.log("⏳ Waiting for Wistia loader script (window._wq)...");
-      await ctx.until(() => {
-        return window._wq && typeof window._wq.push === "function";
-      }, { timeout: 30000 });
+      const videoEmbed = await waitForVideoElement();
 
-      yield ctx.log("✅ Wistia _wq API is available.");
+      try {
+        await attemptAutoPlayWithWistiaApi();
+      } catch (apiError) {
+        ctx.log.warn('Falling back to manual click autoplay');
+        await fallbackPlayClick(videoEmbed);
+      }
 
-      // 2. Register an autoplay for any player that becomes ready
-      window._wq.push({
-        id: "_all",
-        onReady: function(video) {
-          video.play().then(() => {
-            console.log("▶️ Wistia video started playing automatically.");
-          }).catch((err) => {
-            console.log(`⚠️ Wistia video play() failed: ${err.message}`);
-          });
-        }
-      });
+      ctx.log.info('Waiting extra time to allow video to buffer');
+      await sleep(15000); // Allow buffering and download
 
-      yield ctx.log("▶️ Autoplay hook registered for all players.");
+      ctx.log.debug('Waiting for network idle');
+      try {
+        await ctx.waitForNetworkIdle(5000, 60000);
+      } catch (err) {
+        ctx.log.warn('waitForNetworkIdle timed out', {error: err});
+      }
 
-      // 3. Sleep to allow video to buffer
-      yield ctx.log("⏳ Waiting 5 seconds for buffering...");
-      await new Promise(resolve => setTimeout(resolve, 5000));
-
-      // 4. Wait for network idle
-      yield ctx.log("⏳ Waiting for network idle...");
-      await ctx.untilNetworkIdle({ idleTime: 5000, timeout: 60000 });
-
-      yield ctx.log("✅ Network idle detected, moving on.");
+      ctx.log.info('WistiaAutoPlayBehavior complete');
 
     } catch (err) {
-      yield ctx.log(`❌ Error in WistiaAutoPlayBehavior: ${err.message}`);
+      ctx.log.error('Failed to autoplay video', {error: err});
     }
   }
 }
