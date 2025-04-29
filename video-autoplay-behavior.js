@@ -1,6 +1,6 @@
 // Improved WistiaAutoPlayBehavior for Thinkific/Wistia hybrid pages
 
-export default class WistiaAutoPlayBehavior {
+class WistiaAutoPlayBehavior {
   static isMatch(url, document) {
     // Always apply on Thinkific/Wistia pages
     return true;
